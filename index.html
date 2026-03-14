@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>엑셀 데이터 병합기</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <title>엑셀 데이터 병합기 (서식 유지)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     
@@ -49,6 +48,7 @@
             overflow-x: auto;
             max-height: 600px;
             border: 1px solid #ddd;
+            background: #fff;
         }
         table {
             border-collapse: collapse;
@@ -59,22 +59,20 @@
             border: 1px solid #d4d4d4;
             padding: 5px 10px;
             height: 25px;
+            min-width: 50px;
         }
-        .bg-yellow { background-color: #FFFF00 !important; }
-        .align-center { text-align: center; }
-        .align-right { text-align: right; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>📊 엑셀 파일 병합 도구</h2>
-    <p>파일을 여러 개 선택하면 <b>A, B, C 순서대로 정렬</b>되어 가로로 병합됩니다.<br>
-    각 파일 사이에는 3칸의 공백이 들어가며, 가운데 칸은 노란색으로 칠해집니다.</p>
+    <h2>📊 엑셀 파일 병합 도구 (서식 완전 유지)</h2>
+    <p>선택한 파일(A, B, C 순)의 <b>폰트 굵기, 배경색, 정렬 등 모든 서식이 그대로 유지</b>되며 병합됩니다.<br>
+    가운데 노란색 띄어쓰기 3칸도 완벽하게 적용됩니다.</p>
     
     <div class="controls">
-        <input type="file" id="fileInput" multiple accept=".xlsx, .xls, .csv">
-        <button onclick="processFiles()">화면에 미리보기</button>
+        <input type="file" id="fileInput" multiple accept=".xlsx">
+        <button onclick="processFiles()">화면에 미리보기 및 병합</button>
         <button id="downloadBtn" onclick="downloadExcel()" disabled>엑셀 파일 다운로드</button>
     </div>
 
@@ -83,17 +81,15 @@
 </div>
 
 <script>
-    let finalWorkbook = null; // 다운로드를 위한 ExcelJS 객체 저장용
+    let finalWorkbook = null;
 
-    // 값이 숫자인지 확인하여 정렬 위치(가운데/우측) 결정
-    function getAlignment(val) {
-        if (val === "" || val === null || val === undefined) return 'center';
-        const strVal = String(val).trim();
-        // 숫자, 콤마가 포함된 숫자, 소수점, 퍼센트 기호, 음수인 경우 우측 정렬
-        if (/^[-+]?[0-9,]+(\.[0-9]+)?%?$/.test(strVal)) {
-            return 'right';
+    // ExcelJS의 ARGB 색상 코드를 HTML에서 쓸 수 있는 HEX 코드로 변환
+    function argbToHex(argb) {
+        if (!argb) return '';
+        if (argb.length === 8) { // ex: FFFF0000 (Alpha, R, G, B)
+            return '#' + argb.substring(2);
         }
-        return 'center'; // 그 외 문자열은 가운데 정렬
+        return '#' + argb;
     }
 
     async function processFiles() {
@@ -103,158 +99,128 @@
             return;
         }
 
-        // 1. 파일 이름 순(A, B, C...)으로 정렬
+        // 1. 파일 이름 순으로 정렬
         const files = Array.from(fileInput.files);
         files.sort((a, b) => a.name.localeCompare(b.name));
 
-        const allFileData = [];
-
-        // 2. SheetJS를 이용하여 각 파일의 데이터와 열 너비 추출
-        for (let file of files) {
-            const fileData = await readFileData(file);
-            allFileData.push(fileData);
-        }
-
-        // 3. ExcelJS 워크북 생성 (다운로드용)
         finalWorkbook = new ExcelJS.Workbook();
-        const sheet = finalWorkbook.addWorksheet('통합결과', { views: [{ showGridLines: true }] });
+        const masterSheet = finalWorkbook.addWorksheet('통합결과');
 
-        // 4. HTML 미리보기용 테이블 생성
-        const table = document.createElement('table');
-        const tbody = document.createElement('tbody');
-        table.appendChild(tbody);
+        let currentColOffset = 0;
+        let maxGlobalRows = 0;
 
-        // 전체 행 개수는 가장 많은 데이터가 있는 파일 기준
-        const maxRows = Math.max(...allFileData.map(d => d.data.length));
-        
-        // HTML의 각 행(tr)을 미리 생성
-        const htmlRows = [];
-        for (let r = 0; r < maxRows; r++) {
-            const tr = document.createElement('tr');
-            htmlRows.push(tr);
-            tbody.appendChild(tr);
-        }
-
-        let currentExcelCol = 1; // ExcelJS는 1부터 열 시작
-
-        // 5. 각 파일을 순회하며 데이터 및 서식 병합
-        for (let i = 0; i < allFileData.length; i++) {
-            const fileData = allFileData[i];
-            const dataMatrix = fileData.data;
-            const colsWidth = fileData.cols; // 원본 열 너비 정보
+        // 2. 각 파일을 순회하며 서식과 데이터를 복사
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const arrayBuffer = await file.arrayBuffer();
             
-            const colCount = Math.max(...dataMatrix.map(r => r.length));
+            const tempWb = new ExcelJS.Workbook();
+            await tempWb.xlsx.load(arrayBuffer);
+            const sourceSheet = tempWb.worksheets[0]; // 첫 번째 시트
 
-            // 데이터 채우기
-            for (let r = 0; r < maxRows; r++) {
-                const rowData = dataMatrix[r] || [];
-                const excelRow = sheet.getRow(r + 1);
-                const htmlRow = htmlRows[r];
-
-                for (let c = 0; c < colCount; c++) {
-                    const val = rowData[c] !== undefined ? rowData[c] : "";
-                    const align = getAlignment(val);
-
-                    // --- [ExcelJS] 엑셀 파일 생성용 데이터 입력 ---
-                    const excelCell = excelRow.getCell(currentExcelCol + c);
-                    
-                    // 숫자로 변환 가능한 것은 숫자로 입력 (쉼표 제거)
-                    if (align === 'right' && typeof val === 'string' && val.includes('%') === false) {
-                        const numVal = Number(val.replace(/,/g, ''));
-                        excelCell.value = isNaN(numVal) ? val : numVal;
-                        excelCell.numFmt = '#,##0.00'; // 기본 숫자 포맷
-                    } else {
-                        excelCell.value = val;
-                    }
-
-                    excelCell.alignment = { horizontal: align, vertical: 'middle' };
-                    excelCell.font = { name: '맑은 고딕', size: 10 };
-
-                    // --- [HTML] 미리보기 화면용 데이터 입력 ---
-                    const td = document.createElement('td');
-                    td.innerText = val;
-                    td.className = align === 'right' ? 'align-right' : 'align-center';
-                    htmlRow.appendChild(td);
-                }
+            if (sourceSheet.rowCount > maxGlobalRows) {
+                maxGlobalRows = sourceSheet.rowCount;
             }
 
-            // 열 너비(간격) 세팅
-            for (let c = 0; c < colCount; c++) {
-                const targetCol = sheet.getColumn(currentExcelCol + c);
-                if (colsWidth && colsWidth[c]) {
-                    targetCol.width = colsWidth[c].wch || 12; // 원본 너비 적용
-                } else {
-                    targetCol.width = 12; // CSV 등 너비 정보가 없을 때의 기본값
-                }
+            // 원본 파일의 열 너비 복사
+            for (let c = 1; c <= sourceSheet.columnCount; c++) {
+                const sourceCol = sourceSheet.getColumn(c);
+                const targetCol = masterSheet.getColumn(currentColOffset + c);
+                if (sourceCol.width) targetCol.width = sourceCol.width;
             }
 
-            currentExcelCol += colCount; // 다음 데이터가 들어갈 열 위치 이동
+            // 원본 파일의 각 셀의 값 및 '서식(폰트, 배경색, 테두리, 정렬)' 완벽 복사
+            sourceSheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+                const targetRow = masterSheet.getRow(rowNumber);
+                row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                    const targetCell = targetRow.getCell(currentColOffset + colNumber);
+                    targetCell.value = cell.value;
+                    targetCell.style = Object.assign({}, cell.style); // 서식 복사 핵심 (굵기, 색상 등)
+                    if (cell.numFmt) targetCell.numFmt = cell.numFmt; // 숫자 포맷 복사
+                });
+            });
 
-            // 6. 마지막 파일이 아니면 3칸의 공백 열 추가 (가운데 노란색)
-            if (i < allFileData.length - 1) {
-                // HTML 공백 추가
-                for (let r = 0; r < maxRows; r++) {
-                    for (let space = 0; space < 3; space++) {
-                        const td = document.createElement('td');
-                        td.style.minWidth = "30px"; // 공백 너비
-                        if (space === 1) td.className = "bg-yellow";
-                        htmlRows[r].appendChild(td);
-                    }
+            currentColOffset += sourceSheet.columnCount;
+
+            // 3. 파일 사이에 3칸 공백 추가 및 가운데 노란색 칠하기
+            if (i < files.length - 1) {
+                const emptyCol1 = currentColOffset + 1;
+                const yellowCol = currentColOffset + 2;
+                const emptyCol3 = currentColOffset + 3;
+
+                // 열 너비 조절
+                masterSheet.getColumn(emptyCol1).width = 4;
+                masterSheet.getColumn(yellowCol).width = 4;
+                masterSheet.getColumn(emptyCol3).width = 4;
+
+                // 2번째 공백 열(가운데) 전체 행에 노란색 배경색 적용
+                for (let r = 1; r <= Math.max(sourceSheet.rowCount, 100); r++) {
+                    const yCell = masterSheet.getRow(r).getCell(yellowCol);
+                    yCell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FFFFFF00' } // 엑셀 노란색 코드
+                    };
                 }
 
-                // Excel 공백 및 색상 추가
-                sheet.getColumn(currentExcelCol).width = 4;
-                sheet.getColumn(currentExcelCol + 1).width = 4;
-                sheet.getColumn(currentExcelCol + 2).width = 4;
-
-                // 2번째 공백 열 전체를 노란색으로 칠함
-                const yellowCol = sheet.getColumn(currentExcelCol + 1);
-                yellowCol.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: 'FFFFFF00' }
-                };
-
-                currentExcelCol += 3; // 3칸 띄우기 반영
+                currentColOffset += 3;
             }
         }
 
-        // 화면 갱신 및 다운로드 버튼 활성화
-        const container = document.getElementById('previewContainer');
-        container.innerHTML = '';
-        container.appendChild(table);
-        
+        // 4. 완성된 엑셀 데이터를 바탕으로 HTML 미리보기 테이블 렌더링 (서식 포함)
+        renderPreviewTable(masterSheet, maxGlobalRows, currentColOffset);
+
         document.getElementById('downloadBtn').disabled = false;
     }
 
-    // 파일 읽기 Promise 래퍼 (SheetJS 활용)
-    function readFileData(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array', cellStyles: true });
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                
-                // 2차원 배열 형태로 데이터 추출
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
-                // 원본 파일의 열 너비 정보 추출 (!cols)
-                const cols = worksheet['!cols'] || null; 
+    // 작성된 masterSheet를 화면에 똑같이 보여주는 함수
+    function renderPreviewTable(sheet, maxRows, maxCols) {
+        const table = document.createElement('table');
+        const tbody = document.createElement('tbody');
 
-                resolve({ data: jsonData, cols: cols });
-            };
-            reader.readAsArrayBuffer(file);
-        });
+        for (let r = 1; r <= maxRows; r++) {
+            const tr = document.createElement('tr');
+            const row = sheet.getRow(r);
+
+            for (let c = 1; c <= maxCols; c++) {
+                const cell = row.getCell(c);
+                const td = document.createElement('td');
+                
+                // 텍스트 가져오기 (수식 결과물이나 포맷팅된 텍스트)
+                td.innerText = cell.text || ''; 
+
+                // --- 셀 서식을 HTML CSS로 변환 적용 ---
+                if (cell.font) {
+                    if (cell.font.bold) td.style.fontWeight = 'bold';
+                    if (cell.font.italic) td.style.fontStyle = 'italic';
+                    if (cell.font.color && cell.font.color.argb) {
+                        td.style.color = argbToHex(cell.font.color.argb);
+                    }
+                }
+                if (cell.fill && cell.fill.fgColor && cell.fill.fgColor.argb) {
+                    td.style.backgroundColor = argbToHex(cell.fill.fgColor.argb);
+                }
+                if (cell.alignment) {
+                    if (cell.alignment.horizontal) td.style.textAlign = cell.alignment.horizontal;
+                    if (cell.alignment.vertical === 'middle') td.style.verticalAlign = 'middle';
+                }
+
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+
+        const container = document.getElementById('previewContainer');
+        container.innerHTML = '';
+        container.appendChild(table);
     }
 
-    // 작성된 ExcelJS 워크북을 파일로 다운로드
+    // 엑셀 다운로드 함수
     async function downloadExcel() {
         if (!finalWorkbook) return;
-        
         const buffer = await finalWorkbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-        saveAs(blob, "필터_통합결과_병합.xlsx");
+        saveAs(blob, "필터_통합결과_서식유지.xlsx");
     }
 </script>
 
