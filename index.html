@@ -1,741 +1,262 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>엑셀 가로 정렬 + 저장</title>
-
-  <!-- 읽기용 -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <!-- 저장용 -->
-  <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
-
-  <style>
-    :root {
-      --grid-border: #d9d9d9;
-      --sheet-border: #cfcfcf;
-      --sheet-bg: #ffffff;
-      --title-bg: #f3f3f3;
-      --yellow-col: #ffff00;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 16px;
-      background: #ffffff;
-      color: #222;
-      font-family: Calibri, "Malgun Gothic", "맑은 고딕", Arial, sans-serif;
-      font-size: 11pt;
-    }
-
-    h1 {
-      margin: 0 0 10px;
-      font-size: 20px;
-      line-height: 1.3;
-    }
-
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-bottom: 10px;
-    }
-
-    .toolbar input[type="file"] {
-      max-width: 100%;
-    }
-
-    .toolbar button {
-      border: 1px solid #c8c8c8;
-      background: #fff;
-      padding: 8px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-
-    .toolbar button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .hint {
-      color: #555;
-      font-size: 12px;
-      line-height: 1.5;
-      margin-bottom: 12px;
-    }
-
-    .dropzone {
-      border: 2px dashed #c9c9c9;
-      border-radius: 10px;
-      padding: 18px;
-      margin-bottom: 14px;
-      text-align: center;
-      color: #666;
-      background: #fafafa;
-      transition: 0.2s ease;
-    }
-
-    .dropzone.dragover {
-      border-color: #7aa7ff;
-      background: #f3f8ff;
-      color: #2d5fd0;
-    }
-
-    .status {
-      margin: 0 0 10px;
-      font-size: 12px;
-      color: #444;
-    }
-
-    .table-wrap {
-      border: 1px solid var(--sheet-border);
-      overflow: auto;
-      max-width: 100%;
-      max-height: calc(100vh - 220px);
-      background: var(--sheet-bg);
-    }
-
-    table.excel-grid {
-      border-collapse: collapse;
-      table-layout: fixed;
-      background: #fff;
-      width: max-content;
-      min-width: 100%;
-    }
-
-    table.excel-grid td {
-      border: 1px solid var(--grid-border);
-      padding: 2px 4px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      vertical-align: middle;
-      background: #fff;
-      color: #111;
-    }
-
-    td.txt { text-align: left; }
-    td.num { text-align: right; }
-    td.center { text-align: center; }
-
-    td.file-title {
-      background: var(--title-bg) !important;
-      font-weight: 700;
-      text-align: center;
-    }
-
-    td.spacer { background: #fff !important; }
-    td.spacer-middle { background: var(--yellow-col) !important; }
-    td.empty { color: #aaa; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>엑셀 데이터 병합기</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+            margin: 20px;
+            background-color: #f4f5f7;
+        }
+        .container {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h2 { margin-top: 0; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        input[type="file"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #00712D;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { background-color: #005A24; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        /* 미리보기 테이블 스타일 */
+        .table-container {
+            overflow-x: auto;
+            max-height: 600px;
+            border: 1px solid #ddd;
+        }
+        table {
+            border-collapse: collapse;
+            white-space: nowrap;
+            font-size: 13px;
+        }
+        th, td {
+            border: 1px solid #d4d4d4;
+            padding: 5px 10px;
+            height: 25px;
+        }
+        .bg-yellow { background-color: #FFFF00 !important; }
+        .align-center { text-align: center; }
+        .align-right { text-align: right; }
+    </style>
 </head>
 <body>
-  <h1>엑셀 파일 가로 병렬 정렬</h1>
 
-  <div class="toolbar">
-    <input id="fileInput" type="file" accept=".xlsx,.xls,.xlsm,.xlsb" multiple />
-    <button id="saveBtn" disabled>통합 엑셀 저장</button>
-  </div>
+<div class="container">
+    <h2>📊 엑셀 파일 병합 도구</h2>
+    <p>파일을 여러 개 선택하면 <b>A, B, C 순서대로 정렬</b>되어 가로로 병합됩니다.<br>
+    각 파일 사이에는 3칸의 공백이 들어가며, 가운데 칸은 노란색으로 칠해집니다.</p>
+    
+    <div class="controls">
+        <input type="file" id="fileInput" multiple accept=".xlsx, .xls, .csv">
+        <button onclick="processFiles()">화면에 미리보기</button>
+        <button id="downloadBtn" onclick="downloadExcel()" disabled>엑셀 파일 다운로드</button>
+    </div>
 
-  <div class="hint">
-    파일명 기준으로 A → B → C 순으로 정렬해서 가로로 붙입니다.<br />
-    각 파일 사이에는 빈 열 1개 + 노란 열 1개 + 빈 열 1개를 넣고, 가운데 열은 전체 높이에 노란색을 칠합니다.<br />
-    원본 엑셀의 열 너비와 행 높이, 병합 셀을 최대한 그대로 반영합니다.
-  </div>
+    <div class="table-container" id="previewContainer">
+        </div>
+</div>
 
-  <div id="dropzone" class="dropzone">여기에 엑셀 파일을 드래그하거나 위에서 여러 파일을 선택하세요.</div>
-  <p id="status" class="status">아직 불러온 파일이 없습니다.</p>
+<script>
+    let finalWorkbook = null; // 다운로드를 위한 ExcelJS 객체 저장용
 
-  <div class="table-wrap">
-    <div id="sheetArea"></div>
-  </div>
-
-  <script>
-    const SHOW_FILE_NAME_ROW = true;   // 파일명 행 숨기려면 false
-    const DEFAULT_ROW_PX = 22;
-    const DEFAULT_EXCEL_COL_PX = 64;
-
-    const fileInput = document.getElementById('fileInput');
-    const dropzone = document.getElementById('dropzone');
-    const statusEl = document.getElementById('status');
-    const sheetArea = document.getElementById('sheetArea');
-    const saveBtn = document.getElementById('saveBtn');
-
-    let latestMetas = [];
-
-    fileInput.addEventListener('change', async (e) => {
-      await handleFiles(Array.from(e.target.files || []));
-    });
-
-    saveBtn.addEventListener('click', async () => {
-      if (!latestMetas.length) return;
-
-      saveBtn.disabled = true;
-      const prevText = saveBtn.textContent;
-      saveBtn.textContent = '저장 중...';
-
-      try {
-        await saveCombinedExcel(latestMetas);
-        statusEl.textContent = '통합 엑셀 파일 저장 완료';
-      } catch (err) {
-        console.error(err);
-        statusEl.textContent = '저장 중 오류가 발생했습니다. 콘솔을 확인하세요.';
-      } finally {
-        saveBtn.textContent = prevText;
-        saveBtn.disabled = false;
-      }
-    });
-
-    ['dragenter', 'dragover'].forEach((eventName) => {
-      dropzone.addEventListener(eventName, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropzone.classList.add('dragover');
-      });
-    });
-
-    ['dragleave', 'drop'].forEach((eventName) => {
-      dropzone.addEventListener(eventName, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropzone.classList.remove('dragover');
-      });
-    });
-
-    dropzone.addEventListener('drop', async (e) => {
-      const files = Array.from(e.dataTransfer ? e.dataTransfer.files : []).filter(isExcelFile);
-      await handleFiles(files);
-    });
-
-    function isExcelFile(file) {
-      return /\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name);
-    }
-
-    async function handleFiles(files) {
-      const excelFiles = files.filter(isExcelFile);
-
-      latestMetas = [];
-      saveBtn.disabled = true;
-
-      if (!excelFiles.length) {
-        statusEl.textContent = '엑셀 파일을 하나 이상 넣어주세요.';
-        sheetArea.innerHTML = '';
-        return;
-      }
-
-      const orderedFiles = [...excelFiles].sort(compareFilesByName);
-      statusEl.textContent = `불러오는 중... (${orderedFiles.map(file => file.name).join(' | ')})`;
-
-      const metas = [];
-
-      for (const file of orderedFiles) {
-        const buffer = await file.arrayBuffer();
-        const workbook = XLSX.read(buffer, {
-          type: 'array',
-          cellStyles: true,
-          cellDates: true,
-          cellNF: true,
-          cellText: true
-        });
-
-        const firstSheetName = workbook.SheetNames[0];
-        const ws = workbook.Sheets[firstSheetName];
-        metas.push(buildSheetMeta(file.name, ws));
-      }
-
-      latestMetas = metas;
-      renderCombinedGrid(metas);
-      saveBtn.disabled = false;
-      statusEl.textContent = `정렬 완료: ${orderedFiles.map(file => file.name).join(' → ')}`;
-    }
-
-    function compareFilesByName(a, b) {
-      const orderA = getFileAlphaOrder(a.name);
-      const orderB = getFileAlphaOrder(b.name);
-
-      if (orderA !== orderB) return orderA - orderB;
-
-      return a.name.localeCompare(b.name, 'ko', {
-        numeric: true,
-        sensitivity: 'base'
-      });
-    }
-
-    function getFileAlphaOrder(fileName) {
-      const upper = String(fileName || '').toUpperCase();
-
-      const groupMatch = upper.match(/(?:그룹|GROUP)?\s*([A-Z])/);
-      if (groupMatch) return groupMatch[1].charCodeAt(0);
-
-      const firstLetter = upper.match(/[A-Z]/);
-      if (firstLetter) return firstLetter[0].charCodeAt(0);
-
-      return Number.MAX_SAFE_INTEGER;
-    }
-
-    function keyOf(r, c) {
-      return `${r}:${c}`;
-    }
-
-    function excelWidthToPx(width) {
-      if (typeof width !== 'number' || Number.isNaN(width)) return DEFAULT_EXCEL_COL_PX;
-      return Math.max(24, Math.round(width * 7 + 5));
-    }
-
-    function pxToExcelWidth(px) {
-      if (!Number.isFinite(px) || px <= 0) return 0.1;
-      return Math.max(0.1, (px - 5) / 7);
-    }
-
-    function pxToPt(px) {
-      return (px * 72) / 96;
-    }
-
-    function getColumnWidthPx(col) {
-      if (!col) return DEFAULT_EXCEL_COL_PX;
-      if (col.hidden) return 0;
-      if (typeof col.wpx === 'number') return Math.max(0, Math.round(col.wpx));
-      if (typeof col.width === 'number') return excelWidthToPx(col.width);
-      if (typeof col.wch === 'number') return excelWidthToPx(col.wch);
-      return DEFAULT_EXCEL_COL_PX;
-    }
-
-    function getRowHeightPx(row) {
-      if (!row) return DEFAULT_ROW_PX;
-      if (row.hidden) return 0;
-      if (typeof row.hpx === 'number') return Math.max(16, Math.round(row.hpx));
-      if (typeof row.hpt === 'number') return Math.max(16, Math.round((row.hpt * 96) / 72));
-      return DEFAULT_ROW_PX;
-    }
-
-    function pickRepresentativeWidthPx(widths) {
-      const valid = widths
-        .filter(width => Number.isFinite(width) && width > 0)
-        .sort((a, b) => a - b);
-
-      if (!valid.length) return DEFAULT_EXCEL_COL_PX;
-      return valid[Math.floor(valid.length / 2)];
-    }
-
-    function buildSheetMeta(fileName, ws) {
-      const ref = ws['!ref'] || 'A1:A1';
-      const range = XLSX.utils.decode_range(ref);
-      const rowCount = range.e.r + 1;
-      const colCount = range.e.c + 1;
-      const cols = ws['!cols'] || [];
-      const rows = ws['!rows'] || [];
-      const merges = ws['!merges'] || [];
-
-      const colWidths = Array.from({ length: colCount }, (_, c) => getColumnWidthPx(cols[c]));
-      const rowHeights = Array.from({ length: rowCount }, (_, r) => getRowHeightPx(rows[r]));
-      const spacerWidthPx = pickRepresentativeWidthPx(colWidths);
-
-      const mergeStartMap = new Map();
-      const mergeCoveredSet = new Set();
-
-      for (const merge of merges) {
-        const startKey = keyOf(merge.s.r, merge.s.c);
-        mergeStartMap.set(startKey, {
-          rowspan: merge.e.r - merge.s.r + 1,
-          colspan: merge.e.c - merge.s.c + 1
-        });
-
-        for (let r = merge.s.r; r <= merge.e.r; r++) {
-          for (let c = merge.s.c; c <= merge.e.c; c++) {
-            if (r === merge.s.r && c === merge.s.c) continue;
-            mergeCoveredSet.add(keyOf(r, c));
-          }
+    // 값이 숫자인지 확인하여 정렬 위치(가운데/우측) 결정
+    function getAlignment(val) {
+        if (val === "" || val === null || val === undefined) return 'center';
+        const strVal = String(val).trim();
+        // 숫자, 콤마가 포함된 숫자, 소수점, 퍼센트 기호, 음수인 경우 우측 정렬
+        if (/^[-+]?[0-9,]+(\.[0-9]+)?%?$/.test(strVal)) {
+            return 'right';
         }
-      }
-
-      return {
-        fileName,
-        ws,
-        rowCount,
-        colCount,
-        colWidths,
-        rowHeights,
-        spacerWidthPx,
-        merges,
-        mergeStartMap,
-        mergeCoveredSet
-      };
+        return 'center'; // 그 외 문자열은 가운데 정렬
     }
 
-    function getCell(ws, r, c) {
-      return ws[XLSX.utils.encode_cell({ r, c })];
-    }
-
-    function getCellText(cell) {
-      if (!cell) return '';
-      if (cell.w != null) return String(cell.w);
-      if (cell.v == null) return '';
-
-      if (cell.t === 'd' && cell.v instanceof Date) {
-        const yyyy = cell.v.getFullYear();
-        const mm = String(cell.v.getMonth() + 1).padStart(2, '0');
-        const dd = String(cell.v.getDate()).padStart(2, '0');
-        const hh = String(cell.v.getHours()).padStart(2, '0');
-        const mi = String(cell.v.getMinutes()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
-      }
-
-      return String(cell.v);
-    }
-
-    function getAlignClass(cell) {
-      if (!cell) return 'txt';
-      if (cell.t === 'n') return 'num';
-      if (cell.t === 'b') return 'center';
-      if (cell.t === 'd') return 'center';
-      return 'txt';
-    }
-
-    function getUnifiedRowHeight(metas, rowIndex) {
-      let height = DEFAULT_ROW_PX;
-
-      for (const meta of metas) {
-        if (rowIndex >= 0 && rowIndex < meta.rowHeights.length) {
-          height = Math.max(height, meta.rowHeights[rowIndex] || DEFAULT_ROW_PX);
+    async function processFiles() {
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput.files.length === 0) {
+            alert("파일을 먼저 선택해주세요.");
+            return;
         }
-      }
 
-      return height;
-    }
+        // 1. 파일 이름 순(A, B, C...)으로 정렬
+        const files = Array.from(fileInput.files);
+        files.sort((a, b) => a.name.localeCompare(b.name));
 
-    function buildLayout(metas) {
-      const maxRows = Math.max(...metas.map(meta => meta.rowCount));
-      const totalRows = maxRows + (SHOW_FILE_NAME_ROW ? 1 : 0);
+        const allFileData = [];
 
-      const blockStarts = [];
-      const spacerInfos = [];
-      let colPointer = 1;
-
-      metas.forEach((meta, index) => {
-        blockStarts.push(colPointer);
-        colPointer += meta.colCount;
-
-        if (index < metas.length - 1) {
-          spacerInfos.push({
-            leftCol: colPointer,
-            middleCol: colPointer + 1,
-            rightCol: colPointer + 2,
-            widthPx: meta.spacerWidthPx
-          });
-          colPointer += 3;
+        // 2. SheetJS를 이용하여 각 파일의 데이터와 열 너비 추출
+        for (let file of files) {
+            const fileData = await readFileData(file);
+            allFileData.push(fileData);
         }
-      });
 
-      return {
-        maxRows,
-        totalRows,
-        totalCols: colPointer - 1,
-        blockStarts,
-        spacerInfos
-      };
-    }
+        // 3. ExcelJS 워크북 생성 (다운로드용)
+        finalWorkbook = new ExcelJS.Workbook();
+        const sheet = finalWorkbook.addWorksheet('통합결과', { views: [{ showGridLines: true }] });
 
-    function appendSpacerCols(colgroup, widthPx) {
-      for (let i = 0; i < 3; i++) {
-        const col = document.createElement('col');
-        col.style.width = `${widthPx}px`;
-        colgroup.appendChild(col);
-      }
-    }
+        // 4. HTML 미리보기용 테이블 생성
+        const table = document.createElement('table');
+        const tbody = document.createElement('tbody');
+        table.appendChild(tbody);
 
-    function appendSpacerCells(tr) {
-      const left = document.createElement('td');
-      left.className = 'spacer';
-      left.innerHTML = '&nbsp;';
-
-      const middle = document.createElement('td');
-      middle.className = 'spacer-middle';
-      middle.innerHTML = '&nbsp;';
-
-      const right = document.createElement('td');
-      right.className = 'spacer';
-      right.innerHTML = '&nbsp;';
-
-      tr.appendChild(left);
-      tr.appendChild(middle);
-      tr.appendChild(right);
-    }
-
-    function renderCombinedGrid(metas) {
-      sheetArea.innerHTML = '';
-      if (!metas.length) return;
-
-      const layout = buildLayout(metas);
-
-      const table = document.createElement('table');
-      table.className = 'excel-grid';
-
-      const colgroup = document.createElement('colgroup');
-
-      metas.forEach((meta, index) => {
-        meta.colWidths.forEach((px) => {
-          const col = document.createElement('col');
-          col.style.width = `${px}px`;
-          colgroup.appendChild(col);
-        });
-
-        if (index < metas.length - 1) {
-          appendSpacerCols(colgroup, meta.spacerWidthPx);
+        // 전체 행 개수는 가장 많은 데이터가 있는 파일 기준
+        const maxRows = Math.max(...allFileData.map(d => d.data.length));
+        
+        // HTML의 각 행(tr)을 미리 생성
+        const htmlRows = [];
+        for (let r = 0; r < maxRows; r++) {
+            const tr = document.createElement('tr');
+            htmlRows.push(tr);
+            tbody.appendChild(tr);
         }
-      });
 
-      table.appendChild(colgroup);
+        let currentExcelCol = 1; // ExcelJS는 1부터 열 시작
 
-      const tbody = document.createElement('tbody');
+        // 5. 각 파일을 순회하며 데이터 및 서식 병합
+        for (let i = 0; i < allFileData.length; i++) {
+            const fileData = allFileData[i];
+            const dataMatrix = fileData.data;
+            const colsWidth = fileData.cols; // 원본 열 너비 정보
+            
+            const colCount = Math.max(...dataMatrix.map(r => r.length));
 
-      if (SHOW_FILE_NAME_ROW) {
-        const tr = document.createElement('tr');
-        tr.style.height = '28px';
+            // 데이터 채우기
+            for (let r = 0; r < maxRows; r++) {
+                const rowData = dataMatrix[r] || [];
+                const excelRow = sheet.getRow(r + 1);
+                const htmlRow = htmlRows[r];
 
-        metas.forEach((meta, index) => {
-          const td = document.createElement('td');
-          td.colSpan = meta.colCount;
-          td.className = 'file-title';
-          td.textContent = meta.fileName;
-          tr.appendChild(td);
+                for (let c = 0; c < colCount; c++) {
+                    const val = rowData[c] !== undefined ? rowData[c] : "";
+                    const align = getAlignment(val);
 
-          if (index < metas.length - 1) {
-            appendSpacerCells(tr);
-          }
-        });
+                    // --- [ExcelJS] 엑셀 파일 생성용 데이터 입력 ---
+                    const excelCell = excelRow.getCell(currentExcelCol + c);
+                    
+                    // 숫자로 변환 가능한 것은 숫자로 입력 (쉼표 제거)
+                    if (align === 'right' && typeof val === 'string' && val.includes('%') === false) {
+                        const numVal = Number(val.replace(/,/g, ''));
+                        excelCell.value = isNaN(numVal) ? val : numVal;
+                        excelCell.numFmt = '#,##0.00'; // 기본 숫자 포맷
+                    } else {
+                        excelCell.value = val;
+                    }
 
-        tbody.appendChild(tr);
-      }
+                    excelCell.alignment = { horizontal: align, vertical: 'middle' };
+                    excelCell.font = { name: '맑은 고딕', size: 10 };
 
-      for (let r = 0; r < layout.maxRows; r++) {
-        const tr = document.createElement('tr');
-        tr.style.height = `${getUnifiedRowHeight(metas, r)}px`;
-
-        metas.forEach((meta, metaIndex) => {
-          if (r >= meta.rowCount) {
-            for (let c = 0; c < meta.colCount; c++) {
-              const td = document.createElement('td');
-              td.className = 'txt empty';
-              td.innerHTML = '&nbsp;';
-              tr.appendChild(td);
+                    // --- [HTML] 미리보기 화면용 데이터 입력 ---
+                    const td = document.createElement('td');
+                    td.innerText = val;
+                    td.className = align === 'right' ? 'align-right' : 'align-center';
+                    htmlRow.appendChild(td);
+                }
             }
-          } else {
-            for (let c = 0; c < meta.colCount; c++) {
-              if (meta.mergeCoveredSet.has(keyOf(r, c))) continue;
 
-              const td = document.createElement('td');
-              const mergeInfo = meta.mergeStartMap.get(keyOf(r, c));
-
-              if (mergeInfo) {
-                td.rowSpan = mergeInfo.rowspan;
-                td.colSpan = mergeInfo.colspan;
-              }
-
-              const cell = getCell(meta.ws, r, c);
-              td.className = getAlignClass(cell);
-              td.textContent = getCellText(cell);
-              tr.appendChild(td);
+            // 열 너비(간격) 세팅
+            for (let c = 0; c < colCount; c++) {
+                const targetCol = sheet.getColumn(currentExcelCol + c);
+                if (colsWidth && colsWidth[c]) {
+                    targetCol.width = colsWidth[c].wch || 12; // 원본 너비 적용
+                } else {
+                    targetCol.width = 12; // CSV 등 너비 정보가 없을 때의 기본값
+                }
             }
-          }
 
-          if (metaIndex < metas.length - 1) {
-            appendSpacerCells(tr);
-          }
+            currentExcelCol += colCount; // 다음 데이터가 들어갈 열 위치 이동
+
+            // 6. 마지막 파일이 아니면 3칸의 공백 열 추가 (가운데 노란색)
+            if (i < allFileData.length - 1) {
+                // HTML 공백 추가
+                for (let r = 0; r < maxRows; r++) {
+                    for (let space = 0; space < 3; space++) {
+                        const td = document.createElement('td');
+                        td.style.minWidth = "30px"; // 공백 너비
+                        if (space === 1) td.className = "bg-yellow";
+                        htmlRows[r].appendChild(td);
+                    }
+                }
+
+                // Excel 공백 및 색상 추가
+                sheet.getColumn(currentExcelCol).width = 4;
+                sheet.getColumn(currentExcelCol + 1).width = 4;
+                sheet.getColumn(currentExcelCol + 2).width = 4;
+
+                // 2번째 공백 열 전체를 노란색으로 칠함
+                const yellowCol = sheet.getColumn(currentExcelCol + 1);
+                yellowCol.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFFFFF00' }
+                };
+
+                currentExcelCol += 3; // 3칸 띄우기 반영
+            }
+        }
+
+        // 화면 갱신 및 다운로드 버튼 활성화
+        const container = document.getElementById('previewContainer');
+        container.innerHTML = '';
+        container.appendChild(table);
+        
+        document.getElementById('downloadBtn').disabled = false;
+    }
+
+    // 파일 읽기 Promise 래퍼 (SheetJS 활용)
+    function readFileData(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array', cellStyles: true });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // 2차원 배열 형태로 데이터 추출
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+                // 원본 파일의 열 너비 정보 추출 (!cols)
+                const cols = worksheet['!cols'] || null; 
+
+                resolve({ data: jsonData, cols: cols });
+            };
+            reader.readAsArrayBuffer(file);
         });
-
-        tbody.appendChild(tr);
-      }
-
-      table.appendChild(tbody);
-      sheetArea.appendChild(table);
     }
 
-    function setExcelJsCellValue(targetCell, srcCell) {
-      if (!srcCell || srcCell.v == null) {
-        targetCell.value = null;
-        return;
-      }
-
-      if (srcCell.t === 'n') {
-        targetCell.value = Number(srcCell.v);
-        if (srcCell.z) targetCell.numFmt = srcCell.z;
-        return;
-      }
-
-      if (srcCell.t === 'b') {
-        targetCell.value = !!srcCell.v;
-        return;
-      }
-
-      if (srcCell.t === 'd') {
-        if (srcCell.v instanceof Date) {
-          targetCell.value = srcCell.v;
-        } else {
-          const d = new Date(srcCell.v);
-          targetCell.value = Number.isNaN(d.getTime()) ? String(srcCell.w || srcCell.v) : d;
-        }
-        if (srcCell.z) targetCell.numFmt = srcCell.z;
-        return;
-      }
-
-      if (srcCell.t === 'e') {
-        targetCell.value = String(srcCell.w || srcCell.v || '');
-        return;
-      }
-
-      targetCell.value = srcCell.v;
+    // 작성된 ExcelJS 워크북을 파일로 다운로드
+    async function downloadExcel() {
+        if (!finalWorkbook) return;
+        
+        const buffer = await finalWorkbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        saveAs(blob, "필터_통합결과_병합.xlsx");
     }
+</script>
 
-    function styleExcelJsCell(targetCell, srcCell) {
-      targetCell.font = { name: 'Calibri', size: 11 };
-
-      let horizontal = 'left';
-      if (srcCell) {
-        if (srcCell.t === 'n') horizontal = 'right';
-        else if (srcCell.t === 'b' || srcCell.t === 'd') horizontal = 'center';
-      }
-
-      targetCell.alignment = {
-        horizontal,
-        vertical: 'middle'
-      };
-    }
-
-    async function saveCombinedExcel(metas) {
-      const workbook = new ExcelJS.Workbook();
-      workbook.creator = 'Browser';
-      workbook.created = new Date();
-
-      const worksheet = workbook.addWorksheet('통합결과', {
-        views: [{ showGridLines: true }]
-      });
-
-      const layout = buildLayout(metas);
-      const dataStartRow = SHOW_FILE_NAME_ROW ? 2 : 1;
-
-      const columns = [];
-      metas.forEach((meta, index) => {
-        meta.colWidths.forEach((px) => {
-          columns.push({ width: pxToExcelWidth(px) });
-        });
-
-        if (index < metas.length - 1) {
-          const gapWidth = pxToExcelWidth(meta.spacerWidthPx);
-          columns.push({ width: gapWidth });
-          columns.push({ width: gapWidth });
-          columns.push({ width: gapWidth });
-        }
-      });
-      worksheet.columns = columns;
-
-      for (let r = 1; r <= layout.totalRows; r++) {
-        const row = worksheet.getRow(r);
-
-        if (SHOW_FILE_NAME_ROW && r === 1) {
-          row.height = pxToPt(28);
-        } else {
-          const sourceRowIndex = r - dataStartRow;
-          row.height = pxToPt(getUnifiedRowHeight(metas, sourceRowIndex));
-        }
-      }
-
-      const yellowFill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFFFFF00' }
-      };
-
-      const grayFill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFF3F3F3' }
-      };
-
-      layout.spacerInfos.forEach((spacer) => {
-        worksheet.getColumn(spacer.middleCol).fill = yellowFill;
-
-        for (let r = 1; r <= layout.totalRows; r++) {
-          worksheet.getCell(r, spacer.middleCol).fill = yellowFill;
-        }
-      });
-
-      if (SHOW_FILE_NAME_ROW) {
-        metas.forEach((meta, index) => {
-          const startCol = layout.blockStarts[index];
-          const endCol = startCol + meta.colCount - 1;
-
-          worksheet.mergeCells(1, startCol, 1, endCol);
-
-          const titleCell = worksheet.getCell(1, startCol);
-          titleCell.value = meta.fileName;
-          titleCell.font = { name: 'Calibri', size: 11, bold: true };
-          titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-          titleCell.fill = grayFill;
-        });
-      }
-
-      metas.forEach((meta, metaIndex) => {
-        const startCol = layout.blockStarts[metaIndex];
-
-        meta.merges.forEach((merge) => {
-          const sRow = dataStartRow + merge.s.r;
-          const sCol = startCol + merge.s.c;
-          const eRow = dataStartRow + merge.e.r;
-          const eCol = startCol + merge.e.c;
-          worksheet.mergeCells(sRow, sCol, eRow, eCol);
-        });
-
-        for (let r = 0; r < meta.rowCount; r++) {
-          for (let c = 0; c < meta.colCount; c++) {
-            if (meta.mergeCoveredSet.has(keyOf(r, c))) continue;
-
-            const srcCell = getCell(meta.ws, r, c);
-            const outCell = worksheet.getCell(dataStartRow + r, startCol + c);
-
-            setExcelJsCellValue(outCell, srcCell);
-            styleExcelJsCell(outCell, srcCell);
-          }
-        }
-      });
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      downloadBlob(
-        new Blob(
-          [buffer],
-          { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
-        ),
-        `통합결과_${getTimeStamp()}.xlsx`
-      );
-    }
-
-    function getTimeStamp() {
-      const now = new Date();
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const dd = String(now.getDate()).padStart(2, '0');
-      const hh = String(now.getHours()).padStart(2, '0');
-      const mi = String(now.getMinutes()).padStart(2, '0');
-      const ss = String(now.getSeconds()).padStart(2, '0');
-      return `${yyyy}${mm}${dd}_${hh}${mi}${ss}`;
-    }
-
-    function downloadBlob(blob, filename) {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      setTimeout(() => {
-        URL.revokeObjectURL(url);
-      }, 1000);
-    }
-  </script>
 </body>
 </html>
