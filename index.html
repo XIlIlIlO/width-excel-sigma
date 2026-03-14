@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>엑셀 가로 정렬 뷰어</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --grid-border: #d9d9d9;
+      --sheet-border: #cfcfcf;
+      --sheet-bg: #ffffff;
+      --title-bg: #f3f3f3;
+      --yellow-col: #ffff00;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 16px;
+      background: #ffffff;
+      color: #222;
+      font-family: Calibri, "Malgun Gothic", "맑은 고딕", Arial, sans-serif;
+      font-size: 11pt;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 20px;
+      line-height: 1.3;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .toolbar input[type="file"] {
+      max-width: 100%;
+    }
+
+    .hint {
+      color: #555;
+      font-size: 12px;
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+
+    .dropzone {
+      border: 2px dashed #c9c9c9;
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 14px;
+      text-align: center;
+      color: #666;
+      background: #fafafa;
+      transition: 0.2s ease;
+    }
+
+    .dropzone.dragover {
+      border-color: #7aa7ff;
+      background: #f3f8ff;
+      color: #2d5fd0;
+    }
+
+    .status {
+      margin: 0 0 10px;
+      font-size: 12px;
+      color: #444;
+    }
+
+    .table-wrap {
+      border: 1px solid var(--sheet-border);
+      overflow: auto;
+      max-width: 100%;
+      max-height: calc(100vh - 220px);
+      background: var(--sheet-bg);
+    }
+
+    table.excel-grid {
+      border-collapse: collapse;
+      table-layout: fixed;
+      background: #fff;
+      width: max-content;
+      min-width: 100%;
+    }
+
+    table.excel-grid td {
+      border: 1px solid var(--grid-border);
+      padding: 2px 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: middle;
+      background: #fff;
+      color: #111;
+    }
+
+    td.txt { text-align: left; }
+    td.num { text-align: right; }
+    td.center { text-align: center; }
+
+    td.file-title {
+      background: var(--title-bg) !important;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    td.spacer { background: #fff !important; }
+    td.spacer-middle { background: var(--yellow-col) !important; }
+    td.empty { color: #aaa; }
+  </style>
+</head>
+<body>
+  <h1>엑셀 파일 가로 병렬 정렬</h1>
+
+  <div class="toolbar">
+    <input id="fileInput" type="file" accept=".xlsx,.xls,.xlsm,.xlsb" multiple />
+  </div>
+
+  <div class="hint">
+    파일명 기준으로 A → B → C 순으로 정렬해서 가로로 붙입니다.<br />
+    각 파일 사이에는 빈 열 1개 + 노란 열 1개 + 빈 열 1개를 넣고, 가운데 열은 전체 높이에 노란색을 칠합니다.<br />
+    원본 엑셀의 열 너비와 행 높이를 읽어서 최대한 그대로 반영합니다.
+  </div>
+
+  <div id="dropzone" class="dropzone">여기에 엑셀 파일을 드래그하거나 위에서 여러 파일을 선택하세요.</div>
+  <p id="status" class="status">아직 불러온 파일이 없습니다.</p>
+
+  <div class="table-wrap">
+    <div id="sheetArea"></div>
+  </div>
+
+  <script>
+    const SHOW_FILE_NAME_ROW = true; // 파일명 행이 싫으면 false
+    const DEFAULT_ROW_PX = 22;
+    const DEFAULT_EXCEL_COL_PX = 64;
+
+    const fileInput = document.getElementById('fileInput');
+    const dropzone = document.getElementById('dropzone');
+    const statusEl = document.getElementById('status');
+    const sheetArea = document.getElementById('sheetArea');
+
+    fileInput.addEventListener('change', async (e) => {
+      await handleFiles(Array.from(e.target.files || []));
+    });
+
+    ['dragenter', 'dragover'].forEach((eventName) => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add('dragover');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach((eventName) => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove('dragover');
+      });
+    });
+
+    dropzone.addEventListener('drop', async (e) => {
+      const files = Array.from(e.dataTransfer?.files || []).filter(isExcelFile);
+      await handleFiles(files);
+    });
+
+    function isExcelFile(file) {
+      return /\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name);
+    }
+
+    async function handleFiles(files) {
+      const excelFiles = files.filter(isExcelFile);
+
+      if (!excelFiles.length) {
+        statusEl.textContent = '엑셀 파일을 하나 이상 넣어주세요.';
+        sheetArea.innerHTML = '';
+        return;
+      }
+
+      const orderedFiles = [...excelFiles].sort(compareFilesByName);
+      statusEl.textContent = `불러오는 중... (${orderedFiles.map(file => file.name).join(' | ')})`;
+
+      const metas = [];
+
+      for (const file of orderedFiles) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, {
+          type: 'array',
+          cellStyles: true,
+          cellDates: true,
+          cellNF: true,
+          cellText: true
+        });
+
+        const firstSheetName = workbook.SheetNames[0];
+        const ws = workbook.Sheets[firstSheetName];
+        metas.push(buildSheetMeta(file.name, ws));
+      }
+
+      renderCombinedGrid(metas);
+      statusEl.textContent = `정렬 완료: ${orderedFiles.map(file => file.name).join(' → ')}`;
+    }
+
+    function compareFilesByName(a, b) {
+      const orderA = getFileAlphaOrder(a.name);
+      const orderB = getFileAlphaOrder(b.name);
+
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+
+      return a.name.localeCompare(b.name, 'ko', {
+        numeric: true,
+        sensitivity: 'base'
+      });
+    }
+
+    function getFileAlphaOrder(fileName) {
+      const upper = String(fileName || '').toUpperCase();
+      const groupMatch = upper.match(/(?:그룹|GROUP)?\s*([A-Z])/);
+      if (groupMatch) return groupMatch[1].charCodeAt(0);
+
+      const firstLetter = upper.match(/[A-Z]/);
+      if (firstLetter) return firstLetter[0].charCodeAt(0);
+
+      return Number.MAX_SAFE_INTEGER;
+    }
+
+    function buildSheetMeta(fileName, ws) {
+      const ref = ws['!ref'] || 'A1:A1';
+      const range = XLSX.utils.decode_range(ref);
+      const rowCount = range.e.r + 1;
+      const colCount = range.e.c + 1;
+      const cols = ws['!cols'] || [];
+      const rows = ws['!rows'] || [];
+      const merges = ws['!merges'] || [];
+
+      const colWidths = Array.from({ length: colCount }, (_, c) => getColumnWidthPx(cols[c]));
+      const rowHeights = Array.from({ length: rowCount }, (_, r) => getRowHeightPx(rows[r]));
+      const spacerWidthPx = pickRepresentativeWidthPx(colWidths);
+
+      const mergeStartMap = new Map();
+      const mergeCoveredSet = new Set();
+
+      for (const merge of merges) {
+        const startKey = keyOf(merge.s.r, merge.s.c);
+        mergeStartMap.set(startKey, {
+          rowspan: merge.e.r - merge.s.r + 1,
+          colspan: merge.e.c - merge.s.c + 1
+        });
+
+        for (let r = merge.s.r; r <= merge.e.r; r++) {
+          for (let c = merge.s.c; c <= merge.e.c; c++) {
+            if (r === merge.s.r && c === merge.s.c) continue;
+            mergeCoveredSet.add(keyOf(r, c));
+          }
+        }
+      }
+
+      return {
+        fileName,
+        ws,
+        rowCount,
+        colCount,
+        colWidths,
+        rowHeights,
+        spacerWidthPx,
+        mergeStartMap,
+        mergeCoveredSet
+      };
+    }
+
+    function pickRepresentativeWidthPx(widths) {
+      const valid = widths
+        .filter(width => Number.isFinite(width) && width > 0)
+        .sort((a, b) => a - b);
+
+      if (!valid.length) return DEFAULT_EXCEL_COL_PX;
+      return valid[Math.floor(valid.length / 2)];
+    }
+
+    function keyOf(r, c) {
+      return `${r}:${c}`;
+    }
+
+    function excelWidthToPx(width) {
+      if (typeof width !== 'number' || Number.isNaN(width)) return DEFAULT_EXCEL_COL_PX;
+      return Math.max(24, Math.round(width * 7 + 5));
+    }
+
+    function getColumnWidthPx(col) {
+      if (!col) return DEFAULT_EXCEL_COL_PX;
+      if (col.hidden) return 0;
+      if (typeof col.wpx === 'number') return Math.max(0, Math.round(col.wpx));
+      if (typeof col.width === 'number') return excelWidthToPx(col.width);
+      if (typeof col.wch === 'number') return excelWidthToPx(col.wch);
+      return DEFAULT_EXCEL_COL_PX;
+    }
+
+    function getRowHeightPx(row) {
+      if (!row) return DEFAULT_ROW_PX;
+      if (row.hidden) return 0;
+      if (typeof row.hpx === 'number') return Math.max(16, Math.round(row.hpx));
+      if (typeof row.hpt === 'number') return Math.max(16, Math.round((row.hpt * 96) / 72));
+      return DEFAULT_ROW_PX;
+    }
+
+    function getCell(ws, r, c) {
+      return ws[XLSX.utils.encode_cell({ r, c })];
+    }
+
+    function getCellText(cell) {
+      if (!cell) return '';
+      if (cell.w != null) return String(cell.w);
+      if (cell.v == null) return '';
+
+      if (cell.t === 'd' && cell.v instanceof Date) {
+        const yyyy = cell.v.getFullYear();
+        const mm = String(cell.v.getMonth() + 1).padStart(2, '0');
+        const dd = String(cell.v.getDate()).padStart(2, '0');
+        const hh = String(cell.v.getHours()).padStart(2, '0');
+        const mi = String(cell.v.getMinutes()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+      }
+
+      return String(cell.v);
+    }
+
+    function getAlignClass(cell) {
+      if (!cell) return 'txt';
+      if (cell.t === 'n') return 'num';
+      if (cell.t === 'b') return 'center';
+      if (cell.t === 'd') return 'center';
+      return 'txt';
+    }
+
+    function appendSpacerCols(colgroup, widthPx) {
+      for (let i = 0; i < 3; i++) {
+        const col = document.createElement('col');
+        col.style.width = `${widthPx}px`;
+        colgroup.appendChild(col);
+      }
+    }
+
+    function appendSpacerCells(tr) {
+      const left = document.createElement('td');
+      left.className = 'spacer';
+      left.innerHTML = '&nbsp;';
+
+      const middle = document.createElement('td');
+      middle.className = 'spacer-middle';
+      middle.innerHTML = '&nbsp;';
+
+      const right = document.createElement('td');
+      right.className = 'spacer';
+      right.innerHTML = '&nbsp;';
+
+      tr.appendChild(left);
+      tr.appendChild(middle);
+      tr.appendChild(right);
+    }
+
+    function renderCombinedGrid(metas) {
+      sheetArea.innerHTML = '';
+      if (!metas.length) return;
+
+      const maxRows = Math.max(...metas.map(meta => meta.rowCount));
+
+      const table = document.createElement('table');
+      table.className = 'excel-grid';
+
+      const colgroup = document.createElement('colgroup');
+      metas.forEach((meta, index) => {
+        meta.colWidths.forEach((px) => {
+          const col = document.createElement('col');
+          col.style.width = `${px}px`;
+          colgroup.appendChild(col);
+        });
+
+        if (index < metas.length - 1) {
+          appendSpacerCols(colgroup, meta.spacerWidthPx);
+        }
+      });
+      table.appendChild(colgroup);
+
+      const tbody = document.createElement('tbody');
+
+      if (SHOW_FILE_NAME_ROW) {
+        const tr = document.createElement('tr');
+        tr.style.height = '28px';
+
+        metas.forEach((meta, index) => {
+          const td = document.createElement('td');
+          td.colSpan = meta.colCount;
+          td.className = 'file-title';
+          td.textContent = meta.fileName;
+          tr.appendChild(td);
+
+          if (index < metas.length - 1) {
+            appendSpacerCells(tr);
+          }
+        });
+
+        tbody.appendChild(tr);
+      }
+
+      for (let r = 0; r < maxRows; r++) {
+        const tr = document.createElement('tr');
+        tr.style.height = `${getUnifiedRowHeight(metas, r)}px`;
+
+        metas.forEach((meta, metaIndex) => {
+          if (r >= meta.rowCount) {
+            for (let c = 0; c < meta.colCount; c++) {
+              const td = document.createElement('td');
+              td.className = 'txt empty';
+              td.innerHTML = '&nbsp;';
+              tr.appendChild(td);
+            }
+          } else {
+            for (let c = 0; c < meta.colCount; c++) {
+              if (meta.mergeCoveredSet.has(keyOf(r, c))) continue;
+
+              const td = document.createElement('td');
+              const mergeInfo = meta.mergeStartMap.get(keyOf(r, c));
+              if (mergeInfo) {
+                td.rowSpan = mergeInfo.rowspan;
+                td.colSpan = mergeInfo.colspan;
+              }
+
+              const cell = getCell(meta.ws, r, c);
+              td.className = getAlignClass(cell);
+              td.textContent = getCellText(cell);
+              tr.appendChild(td);
+            }
+          }
+
+          if (metaIndex < metas.length - 1) {
+            appendSpacerCells(tr);
+          }
+        });
+
+        tbody.appendChild(tr);
+      }
+
+      table.appendChild(tbody);
+      sheetArea.appendChild(table);
+    }
+
+    function getUnifiedRowHeight(metas, rowIndex) {
+      let height = DEFAULT_ROW_PX;
+
+      for (const meta of metas) {
+        if (rowIndex < meta.rowHeights.length) {
+          height = Math.max(height, meta.rowHeights[rowIndex] || DEFAULT_ROW_PX);
+        }
+      }
+
+      return height;
+    }
+  </script>
+</body>
+</html>
